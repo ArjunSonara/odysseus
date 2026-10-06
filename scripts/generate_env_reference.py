@@ -1023,9 +1023,15 @@ def _cell(text: str) -> str:
 
 
 def _read_cell(variable: Variable) -> str:
-    primary = f"`{variable.primary.location}`"
-    extra = len(variable.reads) - 1
-    return primary if extra <= 0 else f"{primary} (+{extra} more)"
+    """The file a variable is read in, and how many other files read it.
+
+    Files only, never line numbers. A line number here goes stale whenever an
+    unrelated edit shifts the file, which made every such PR regenerate this page
+    and conflict with every other PR doing the same.
+    """
+    primary = variable.primary.path
+    extra = len({read.path for read in variable.reads} - {primary})
+    return f"`{primary}`" if extra <= 0 else f"`{primary}` (+{extra} more)"
 
 
 def _default_cell(variable: Variable) -> str:
