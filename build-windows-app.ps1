@@ -24,6 +24,7 @@ $DistDir = Join-Path $RepoDir "dist"
 $WindowsDir = Join-Path $RepoDir "windows"
 $SourceFile = Join-Path $WindowsDir "OdysseusLauncher.cs"
 $IconFile = Join-Path $WindowsDir "odysseus.ico"
+$BrandingPng = Join-Path $RepoDir "static\icons\icon-512.png"
 $BrandingJpg = Join-Path $RepoDir "assets\branding\odysseus.jpg"
 $OutExe = Join-Path $DistDir "$AppName.exe"
 
@@ -37,13 +38,23 @@ if (-not (Test-Path $DistDir)) {
 }
 
 # 2. Build icon if missing
-if (-not (Test-Path $IconFile) -and (Test-Path $BrandingJpg)) {
-    Write-Host "  Generating $IconFile from branding asset..."
+if (-not (Test-Path $IconFile)) {
     $pyCmd = Join-Path $RepoDir "venv\Scripts\python.exe"
     if (-not (Test-Path $pyCmd)) { $pyCmd = "python" }
 
-    try {
-        & $pyCmd -c @"
+    if (Test-Path $BrandingPng) {
+        Write-Host "  Generating $IconFile from vector icon asset..."
+        try {
+            & $pyCmd -c @"
+from PIL import Image
+img = Image.open(r'$BrandingPng')
+img.save(r'$IconFile', format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
+"@ 2>$null
+        } catch { }
+    } elseif (Test-Path $BrandingJpg) {
+        Write-Host "  Generating $IconFile from branding asset..."
+        try {
+            & $pyCmd -c @"
 from PIL import Image
 img = Image.open(r'$BrandingJpg')
 w, h = img.size
@@ -53,7 +64,8 @@ top = (h - min_dim) // 2
 img = img.crop((left, top, left + min_dim, top + min_dim))
 img.save(r'$IconFile', format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
 "@ 2>$null
-    } catch { }
+        } catch { }
+    }
 }
 
 if (-not (Test-Path $IconFile) -and (Test-Path (Join-Path $RepoDir "odysseus.ico"))) {
