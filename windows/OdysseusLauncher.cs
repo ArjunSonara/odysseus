@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -12,6 +13,20 @@ namespace OdysseusLauncher
     static class Program
     {
         public static Mutex AppMutex = null;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        public const int SW_RESTORE = 9;
+        public const int SW_SHOW = 5;
 
         [STAThread]
         static void Main(string[] args)
@@ -36,8 +51,21 @@ namespace OdysseusLauncher
 
             if (!isFirstInstance)
             {
-                Log("Existing instance detected. Bringing up window...");
-                LauncherService.OpenWindow(port);
+                Log("Existing instance detected. Restoring Control Panel window...");
+                IntPtr hWnd = FindWindow(null, "Odysseus - Control Panel");
+                if (hWnd != IntPtr.Zero)
+                {
+                    ShowWindow(hWnd, SW_RESTORE);
+                    SetForegroundWindow(hWnd);
+                }
+                else
+                {
+                    // If window handle was not found but server is alive, open window safely
+                    if (LauncherService.IsPortListening(port, 400))
+                    {
+                        LauncherService.OpenWindow(port);
+                    }
+                }
                 return;
             }
 
@@ -239,6 +267,13 @@ namespace OdysseusLauncher
 
         public static void OpenWindow(int port)
         {
+            // Safeguard: Never launch browser if port is not actively listening
+            if (!IsPortListening(port, 400))
+            {
+                Program.Log("Cannot open browser: server is not listening on port " + port);
+                return;
+            }
+
             string url = "http://127.0.0.1:" + port;
             Program.Log("Opening window for " + url);
 
@@ -323,10 +358,10 @@ namespace OdysseusLauncher
             this.ForeColor = Color.White;
             this.Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
 
-            string iconPath = Path.Combine(baseDir, "odysseus.ico");
+            string iconPath = Path.Combine(baseDir, "windows", "odysseus.ico");
             if (!File.Exists(iconPath))
             {
-                iconPath = Path.Combine(baseDir, "windows", "odysseus.ico");
+                iconPath = Path.Combine(baseDir, "odysseus.ico");
             }
             if (File.Exists(iconPath))
             {
@@ -398,7 +433,7 @@ namespace OdysseusLauncher
             lnkUrl.AutoSize = true;
             lnkUrl.LinkColor = Color.FromArgb(137, 180, 250);
             lnkUrl.ActiveLinkColor = Color.FromArgb(180, 205, 255);
-            lnkUrl.LinkClicked += (s, e) => LauncherService.OpenWindow(port);
+            lnkUrl.LinkClicked += (s, e) => HandleOpenUI();
             pnlCard.Controls.Add(lnkUrl);
 
             Label lblPortInfo = new Label();
@@ -410,7 +445,7 @@ namespace OdysseusLauncher
 
             // Action Buttons
             btnStart = CreateStyledButton("Start Server", Color.FromArgb(40, 167, 69), new Point(24, 206), new Size(220, 48));
-            btnStart.Click += (s, e) => ActionStartServer();
+            btnStart.Click += (s, e) => ActionStartServer(false);
             mainPanel.Controls.Add(btnStart);
 
             btnStop = CreateStyledButton("Stop Server", Color.FromArgb(220, 53, 69), new Point(260, 206), new Size(220, 48));
@@ -418,7 +453,7 @@ namespace OdysseusLauncher
             mainPanel.Controls.Add(btnStop);
 
             btnOpenUI = CreateStyledButton("Open App Window", Color.FromArgb(59, 130, 246), new Point(24, 266), new Size(330, 44));
-            btnOpenUI.Click += (s, e) => LauncherService.OpenWindow(port);
+            btnOpenUI.Click += (s, e) => HandleOpenUI();
             mainPanel.Controls.Add(btnOpenUI);
 
             btnRestart = CreateStyledButton("Restart", Color.FromArgb(69, 71, 90), new Point(366, 266), new Size(114, 44));
@@ -503,11 +538,11 @@ namespace OdysseusLauncher
             miShow.DefaultItem = true;
             menu.MenuItems.Add(miShow);
 
-            menu.MenuItems.Add(new MenuItem("Open App Window", (s, e) => LauncherService.OpenWindow(port)));
+            menu.MenuItems.Add(new MenuItem("Open App Window", (s, e) => HandleOpenUI()));
 
             menu.MenuItems.Add(new MenuItem("-"));
 
-            menu.MenuItems.Add(new MenuItem("Start Server", (s, e) => ActionStartServer()));
+            menu.MenuItems.Add(new MenuItem("Start Server", (s, e) => ActionStartServer(false)));
             menu.MenuItems.Add(new MenuItem("Stop Server", (s, e) => ActionStopServer()));
             menu.MenuItems.Add(new MenuItem("Restart Server", (s, e) => ActionRestartServer()));
 
@@ -560,7 +595,7 @@ namespace OdysseusLauncher
                 btnStop.Enabled = true;
                 btnStop.BackColor = Color.FromArgb(220, 53, 69);
 
-                btnOpenUI.Enabled = true;
+                btnOpenUI.Text = "Open App Window";
                 btnOpenUI.BackColor = Color.FromArgb(59, 130, 246);
 
                 btnRestart.Enabled = true;
@@ -580,8 +615,8 @@ namespace OdysseusLauncher
                 btnStop.Enabled = false;
                 btnStop.BackColor = Color.FromArgb(70, 40, 45);
 
-                btnOpenUI.Enabled = false;
-                btnOpenUI.BackColor = Color.FromArgb(40, 50, 75);
+                btnOpenUI.Text = "Start Server & Open Window";
+                btnOpenUI.BackColor = Color.FromArgb(59, 130, 246);
 
                 btnRestart.Enabled = false;
                 btnRestart.BackColor = Color.FromArgb(40, 42, 54);
@@ -590,7 +625,20 @@ namespace OdysseusLauncher
             }
         }
 
-        private void ActionStartServer()
+        private void HandleOpenUI()
+        {
+            if (LauncherService.IsPortListening(port, 350))
+            {
+                LauncherService.OpenWindow(port);
+            }
+            else
+            {
+                // Auto-start server and open window once ready!
+                ActionStartServer(true);
+            }
+        }
+
+        private void ActionStartServer(bool openUiWhenReady)
         {
             isTransitioning = true;
             lblStatusDot.ForeColor = Color.FromArgb(251, 191, 36);
@@ -612,6 +660,11 @@ namespace OdysseusLauncher
                     {
                         if (trayIcon != null)
                             trayIcon.ShowBalloonTip(2000, "Odysseus", "Server is ready on port " + port, ToolTipIcon.Info);
+
+                        if (openUiWhenReady)
+                        {
+                            LauncherService.OpenWindow(port);
+                        }
                     }
                     else
                     {
