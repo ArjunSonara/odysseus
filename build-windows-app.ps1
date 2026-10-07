@@ -93,7 +93,11 @@ if (-not $cscExe) {
 
 Write-Host "  Using compiler: $cscExe"
 
-# 4. Compile executable
+# 4. Stop any existing running instance before compiling/replacing binary
+Get-Process -Name $AppName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
+
+# 5. Compile executable
 $iconFlag = ""
 if (Test-Path $IconFile) {
     $iconFlag = "/win32icon:`"$IconFile`""
@@ -114,10 +118,6 @@ if ($proc.ExitCode -ne 0) {
     Write-Error "Compilation failed with exit code $($proc.ExitCode)."
     exit 1
 }
-
-# Stop any existing running instance before replacing binary
-Get-Process -Name $AppName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 500
 
 # Also copy to repo root for convenient direct access
 try {
